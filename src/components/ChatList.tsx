@@ -1,35 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import Icon from '@/components/ui/icon';
-
-interface Chat {
-  id: string;
-  name: string;
-  lastMessage: string;
-  timestamp: string;
-  unread: number;
-  online: boolean;
-  avatar: string;
-}
+import { getChats, Chat } from '@/lib/api';
 
 interface ChatListProps {
   selectedChat: string | null;
   onSelectChat: (chatId: string) => void;
+  currentUserId: string;
 }
 
-const mockChats: Chat[] = [
-  { id: '1', name: 'Алексей Петров', lastMessage: 'Привет! Как дела?', timestamp: '14:23', unread: 3, online: true, avatar: 'АП' },
-  { id: '2', name: 'Мария Сидорова', lastMessage: 'Спасибо за помощь!', timestamp: '13:45', unread: 0, online: true, avatar: 'МС' },
-  { id: '3', name: 'Иван Иванов', lastMessage: 'Когда встретимся?', timestamp: '12:10', unread: 1, online: false, avatar: 'ИИ' },
-  { id: '4', name: 'Елена Козлова', lastMessage: 'Отправила файлы', timestamp: 'Вчера', unread: 0, online: false, avatar: 'ЕК' },
-  { id: '5', name: 'Дмитрий Смирнов', lastMessage: 'Всё понятно, начинаем', timestamp: '2 дня', unread: 5, online: true, avatar: 'ДС' },
-];
-
-const ChatList = ({ selectedChat, onSelectChat }: ChatListProps) => {
+const ChatList = ({ selectedChat, onSelectChat, currentUserId }: ChatListProps) => {
   const [search, setSearch] = useState('');
-  const [chats] = useState<Chat[]>(mockChats);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchChats = async () => {
+      try {
+        const data = await getChats(currentUserId);
+        setChats(data);
+      } catch (error) {
+        console.error('Failed to load chats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchChats();
+  }, [currentUserId]);
 
   const filteredChats = chats.filter(chat =>
     chat.name.toLowerCase().includes(search.toLowerCase())
@@ -54,7 +53,12 @@ const ChatList = ({ selectedChat, onSelectChat }: ChatListProps) => {
       </div>
 
       <div className="overflow-y-auto max-h-[calc(100vh-250px)]">
-        {filteredChats.map((chat) => (
+        {loading ? (
+          <div className="p-8 text-center text-gray-500">Загрузка...</div>
+        ) : filteredChats.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">Нет доступных диалогов</div>
+        ) : (
+          filteredChats.map((chat) => (
           <button
             key={chat.id}
             onClick={() => onSelectChat(chat.id)}
@@ -87,7 +91,8 @@ const ChatList = ({ selectedChat, onSelectChat }: ChatListProps) => {
               </Badge>
             )}
           </button>
-        ))}
+        ))
+        )}
       </div>
     </div>
   );

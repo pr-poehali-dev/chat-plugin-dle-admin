@@ -1,44 +1,100 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import Icon from '@/components/ui/icon';
-
-interface Message {
-  id: string;
-  text: string;
-  timestamp: string;
-  sender: 'me' | 'other';
-  senderName?: string;
-}
+import { getMessages, sendMessage, uploadFile, Message, UserInfo } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface ChatWindowProps {
   chatId: string | null;
+  currentUserId: string;
 }
 
-const mockMessages: Message[] = [
-  { id: '1', text: 'Привет! Как дела?', timestamp: '14:20', sender: 'other', senderName: 'Алексей Петров' },
-  { id: '2', text: 'Отлично! Спасибо за вопрос', timestamp: '14:21', sender: 'me' },
-  { id: '3', text: 'Можешь помочь с проектом?', timestamp: '14:22', sender: 'other', senderName: 'Алексей Петров' },
-  { id: '4', text: 'Конечно, что нужно сделать?', timestamp: '14:23', sender: 'me' },
-];
-
-const ChatWindow = ({ chatId }: ChatWindowProps) => {
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+const ChatWindow = ({ chatId, currentUserId }: ChatWindowProps) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
-  const handleSend = () => {
-    if (!newMessage.trim()) return;
+  useEffect(() => {
+    if (!chatId) return;
 
-    const message: Message = {
+    const fetchMessages = async () => {
+      setLoading(true);
+      try {
+        const data = await getMessages(currentUserId, chatId);
+        setMessages(data.messages);
+        setUserInfo(data.userInfo);
+      } catch (error) {
+        console.error('Failed to load messages:', error);
+        toast({
+          title: "Ошибка",
+          description: "Не удалось загрузить сообщения",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMessages();
+  }, [chatId, currentUserId, toast]);
+
+  const handleSend = async () => {
+    if (!newMessage.trim() || !chatId) return;
+
+    const tempMessage: Message = {
       id: Date.now().toString(),
       text: newMessage,
       timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
       sender: 'me',
     };
 
-    setMessages([...messages, message]);
+    setMessages([...messages, tempMessage]);
     setNewMessage('');
+
+    try {
+      await sendMessage(currentUserId, chatId, newMessage);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось отправить сообщение",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !chatId) return;
+
+    setUploading(true);
+    try {
+      const result = await uploadFile(file);
+      await sendMessage(currentUserId, chatId, `Отправлен файл: ${result.file_name}`, result.url, result.file_type);
+      
+      const data = await getMessages(currentUserId, chatId);
+      setMessages(data.messages);
+      
+      toast({
+        title: "Успешно",
+        description: "Файл загружен",
+      });
+    } catch (error) {
+      console.error('Failed to upload file:', error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось загрузить файл",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (!chatId) {
@@ -61,14 +117,14 @@ const ChatWindow = ({ chatId }: ChatWindowProps) => {
         <div className="flex items-center gap-3">
           <Avatar className="w-10 h-10 border-2 border-white shadow-md">
             <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white font-semibold">
-              АП
+              {userInfo?.avatar || 'U'}
             </AvatarFallback>
           </Avatar>
           <div>
-            <h3 className="font-semibold text-gray-900">Алексей Петров</h3>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              Онлайн
+            <h3 className="font-semibold text-gray-900">{userInfo?.name || 'Пользователь'}</h3>
+            <p className={`text-xs flex items-center gap-1 ${userInfo?.online ? 'text-green-600' : 'text-gray-500'}`}>
+              <span className={`w-2 h-2 rounded-full ${userInfo?.online ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+              {userInfo?.online ? 'Онлайн' : 'Оффлайн'}
             </p>
           </div>
         </div>
@@ -86,54 +142,78 @@ const ChatWindow = ({ chatId }: ChatWindowProps) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex items-end gap-2 animate-fade-in ${
-              message.sender === 'me' ? 'flex-row-reverse' : 'flex-row'
-            }`}
-          >
-            {message.sender === 'other' && (
-              <Avatar className="w-8 h-8 border-2 border-white shadow-sm">
-                <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white text-xs font-semibold">
-                  АП
-                </AvatarFallback>
-              </Avatar>
-            )}
+        {loading ? (
+          <div className="text-center text-gray-500 py-8">Загрузка сообщений...</div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">Нет сообщений. Начните диалог!</div>
+        ) : (
+          messages.map((message) => (
             <div
-              className={`max-w-[70%] rounded-2xl px-4 py-2 shadow-md ${
-                message.sender === 'me'
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-br-sm'
-                  : 'bg-gray-100 text-gray-900 rounded-bl-sm'
+              key={message.id}
+              className={`flex items-end gap-2 animate-fade-in ${
+                message.sender === 'me' ? 'flex-row-reverse' : 'flex-row'
               }`}
             >
-              <p className="text-sm">{message.text}</p>
-              <span
-                className={`text-xs mt-1 block ${
-                  message.sender === 'me' ? 'text-purple-100' : 'text-gray-500'
+              {message.sender === 'other' && (
+                <Avatar className="w-8 h-8 border-2 border-white shadow-sm">
+                  <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white text-xs font-semibold">
+                    {userInfo?.avatar || 'U'}
+                  </AvatarFallback>
+                </Avatar>
+              )}
+              <div
+                className={`max-w-[70%] rounded-2xl px-4 py-2 shadow-md ${
+                  message.sender === 'me'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-br-sm'
+                    : 'bg-gray-100 text-gray-900 rounded-bl-sm'
                 }`}
               >
-                {message.timestamp}
-              </span>
+                {message.fileUrl && (
+                  <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className="block mb-2 underline">
+                    📎 {message.fileType?.includes('image') ? 'Изображение' : 'Файл'}
+                  </a>
+                )}
+                <p className="text-sm">{message.text}</p>
+                <span
+                  className={`text-xs mt-1 block ${
+                    message.sender === 'me' ? 'text-purple-100' : 'text-gray-500'
+                  }`}
+                >
+                  {message.timestamp}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <div className="p-4 border-t border-gray-100 bg-gradient-to-r from-purple-50 to-pink-50">
         <div className="flex gap-2">
-          <Button variant="ghost" size="icon" className="hover:bg-purple-100 text-purple-600 shrink-0">
-            <Icon name="Paperclip" size={20} />
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hover:bg-purple-100 text-purple-600 shrink-0"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            <Icon name={uploading ? "Loader2" : "Paperclip"} size={20} />
           </Button>
           <Input
             placeholder="Введите сообщение..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
             className="bg-white border-purple-200 focus:border-purple-400"
           />
           <Button
             onClick={handleSend}
+            disabled={!newMessage.trim()}
             className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white shadow-lg shrink-0"
           >
             <Icon name="Send" size={18} />

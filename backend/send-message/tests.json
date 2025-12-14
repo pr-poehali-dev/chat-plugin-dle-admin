@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Send message",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "text": "Тестовое сообщение",
+        "sender_id": "1",
+        "other_user_id": "2"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "id": "string",
+        "text": "string",
+        "timestamp": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
